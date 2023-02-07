@@ -1,0 +1,7 @@
+apiVersion: example.com/v1
+kind: ExampleCrd
+metadata:
+  name: example-crd-1
+spec:
+  message: "Hello, world!"
+  count: 42
