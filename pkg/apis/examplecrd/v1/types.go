@@ -5,7 +5,7 @@ import (
 )
 
 // +genclient
-// +k8s:deepcopy-gen=interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type ExampleCrd struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -24,8 +24,7 @@ type ExampleCrdStatus struct {
 	Count int `json:"count"`
 }
 
-// +genclient
-// +k8s:deepcopy-gen=interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type ExampleCrdList struct {
 	metav1.TypeMeta `json:",inline"`
