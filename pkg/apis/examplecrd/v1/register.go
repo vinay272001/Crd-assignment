@@ -25,6 +25,7 @@ func init() {
 	SchemeBuilder.Register(addKnownTypes)
 }
 
+
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&ExampleCrd{},
