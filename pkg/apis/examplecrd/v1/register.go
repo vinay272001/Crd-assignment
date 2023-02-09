@@ -4,11 +4,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	examplecrd "k8s.io/CRD/pkg/apis/examplecrd"
 )
 
-var SchemeGroupVersion = schema.GroupVersion{Group: examplecrd.GroupName, Version: "v1"}
+var SchemeGroupVersion = schema.GroupVersion{Group: "examplecrd", Version: "v1"}
 
 func Kind(kind string) schema.GroupKind {
 	return SchemeGroupVersion.WithKind(kind).GroupKind()
@@ -22,6 +20,10 @@ var (
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	AddToScheme = SchemeBuilder.AddToScheme
 )
+
+func init() {
+	SchemeBuilder.Register(addKnownTypes)
+}
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
