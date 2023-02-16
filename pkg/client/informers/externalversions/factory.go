@@ -24,8 +24,8 @@ import (
 	time "time"
 
 	versioned "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned"
-	examplecom "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/example.com"
 	internalinterfaces "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/internalinterfaces"
+	phoenixio "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/phoenix.io"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -243,9 +243,9 @@ type SharedInformerFactory interface {
 	// client.
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
-	Examplecrd() examplecom.Interface
+	Phoenix() phoenixio.Interface
 }
 
-func (f *sharedInformerFactory) Examplecrd() examplecom.Interface {
-	return examplecom.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Phoenix() phoenixio.Interface {
+	return phoenixio.New(f, f.namespace, f.tweakListOptions)
 }

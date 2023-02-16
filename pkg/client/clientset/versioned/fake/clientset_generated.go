@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned"
-	examplecrdv1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/example.com/v1"
-	fakeexamplecrdv1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/example.com/v1/fake"
+	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1"
+	fakephoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -79,7 +79,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// ExamplecrdV1 retrieves the ExamplecrdV1Client
-func (c *Clientset) ExamplecrdV1() examplecrdv1.ExamplecrdV1Interface {
-	return &fakeexamplecrdv1.FakeExamplecrdV1{Fake: &c.Fake}
+// PhoenixV1alpha1 retrieves the PhoenixV1alpha1Client
+func (c *Clientset) PhoenixV1alpha1() phoenixv1alpha1.PhoenixV1alpha1Interface {
+	return &fakephoenixv1alpha1.FakePhoenixV1alpha1{Fake: &c.Fake}
 }

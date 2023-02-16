@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"net/http"
 
-	examplecrdv1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/example.com/v1"
+	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -30,18 +30,18 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	ExamplecrdV1() examplecrdv1.ExamplecrdV1Interface
+	PhoenixV1alpha1() phoenixv1alpha1.PhoenixV1alpha1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	examplecrdV1 *examplecrdv1.ExamplecrdV1Client
+	phoenixV1alpha1 *phoenixv1alpha1.PhoenixV1alpha1Client
 }
 
-// ExamplecrdV1 retrieves the ExamplecrdV1Client
-func (c *Clientset) ExamplecrdV1() examplecrdv1.ExamplecrdV1Interface {
-	return c.examplecrdV1
+// PhoenixV1alpha1 retrieves the PhoenixV1alpha1Client
+func (c *Clientset) PhoenixV1alpha1() phoenixv1alpha1.PhoenixV1alpha1Interface {
+	return c.phoenixV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -88,7 +88,7 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.examplecrdV1, err = examplecrdv1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.phoenixV1alpha1, err = phoenixv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.examplecrdV1 = examplecrdv1.New(c)
+	cs.phoenixV1alpha1 = phoenixv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs
