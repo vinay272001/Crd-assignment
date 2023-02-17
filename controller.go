@@ -63,7 +63,8 @@ func NewController(
 	kubeclient kubernetes.Interface, 
 	appclient clientset.Interface, 
 	appInformer informers.AppInformer) *Controller {
-	
+	klog.Info("NewController is called")
+	klog.Info("\n--------------------------------------------------\n")
 	controller := &Controller{
 		kubeclient:     kubeclient,
 		appclient:   appclient,
@@ -71,12 +72,17 @@ func NewController(
 		appSynced:        appInformer.Informer().HasSynced,
 		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "App"),
 	}
+	klog.Info("NewController made")
+	klog.Info("\n--------------------------------------------------\n")
 
 	klog.Info("Setting up event handlers")
+	klog.Info("\n--------------------------------------------------\n")
 	// event handler when the trackPod resources are added/deleted/updated.
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.createHandler,
 			UpdateFunc: func(old, new interface{}) {
+				klog.Info("In the UpdateFunc method")
+				klog.Info("\n--------------------------------------------------\n")
 				oldApp := old.(*v1alpha1.App)
 				newApp := new.(*v1alpha1.App)
 				if oldApp == newApp {
@@ -88,6 +94,8 @@ func NewController(
 		},
 	)
 
+	klog.Info("returning controller")
+	klog.Info("\n--------------------------------------------------\n")
 	return controller
 }
 
@@ -100,22 +108,24 @@ func (c *Controller) Run(ch chan struct{}) error {
 
 	// Start the informer factories to begin populating the informer caches
 	klog.Info("Starting App controller")
+	klog.Info("\n--------------------------------------------------\n")
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
+	klog.Info("\n--------------------------------------------------\n")
 	if ok := cache.WaitForCacheSync(ch, c.appSynced); !ok {
 		klog.Fatalf("failed to wait for caches to sync")
+		klog.Info("\n--------------------------------------------------\n")
 	}
 
-	// klog.Info("Starting workers")
-	// Launch two workers to process Foo resources
-	// for i := 0; i < workers; i++ {
-	// 	go wait.Until(c.runWorker, time.Second, stopCh)
-	// }
+	klog.Info("Starting workers")
+	klog.Info("\n--------------------------------------------------\n")
 	go wait.Until(c.runWorker, time.Second, ch)
 	klog.Info("Started workers")
+	klog.Info("\n--------------------------------------------------\n")
 	<-ch
 	klog.Info("Shutting down workers")
+	klog.Info("\n--------------------------------------------------\n")
 
 	return nil
 }
@@ -135,14 +145,19 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if shutdown {
 		klog.Info("Shutting down")
+		klog.Info("\n--------------------------------------------------\n")
 		return false
 	}
 
 	defer c.workqueue.Forget(obj)
 	if err := c.syncHandler(obj.(string)); err != nil {
-		klog.Fatalf("Error while syncing the current vs desired state")
+		klog.Fatalf("Error while syncing the current vs desired state----%s", err.Error())
+		klog.Info("\n--------------------------------------------------\n")
 		return false
 	}
+
+	klog.Info("successfully synced %s", obj.(string))
+	klog.Info("\n--------------------------------------------------\n")
 
 	return true
 }
@@ -182,21 +197,36 @@ func (c *Controller) syncHandler(key string) error {
 
 	appList, err := c.kubeclient.CoreV1().Pods(app.Namespace).List(context.TODO(), listOptions)
 
+	klog.Info("In the syncHandler to sync pods")
+	klog.Info("\n--------------------------------------------------\n")
+
 	if err := c.syncPods(app, appList); err != nil {
 		klog.Fatalf("Error while syncing the current vs desired state for App %v: %v\n", app.Name, err.Error())
+		klog.Info("\n--------------------------------------------------\n")
 	}
+	
+	klog.Info("synced pods successfully")
+	klog.Info("\n--------------------------------------------------\n")
 	
 
 	err = c.waitForPods(app, appList)
 	if err != nil {
 		klog.Fatalf("error %s, waiting for pods to meet the expected state", err.Error())
+		klog.Info("\n--------------------------------------------------\n")
 	}
 	// Finally, we update the status block of the Foo resource to reflect the
 	// current state of the world
+
+	klog.Info("successfully waited for pods")
+	klog.Info("\n--------------------------------------------------\n")
+
 	err = c.updateAppStatus(app, app.Spec.Message, appList)
 	if err != nil {
 		return err
 	}
+
+	klog.Info("successfully updated status")
+	klog.Info("\n--------------------------------------------------\n")
 
 	return nil
 }
@@ -228,28 +258,38 @@ func (c *Controller) syncPods(app *v1alpha1.App, appList *corev1.PodList) error 
 	}
 
 	if ifDelete {
+		klog.Info("pods are getting deletes ", numDelete)
+		klog.Info("\n--------------------------------------------------\n")
 		for i:= 0; i < numDelete ; i++ {
 			err := c.kubeclient.CoreV1().Pods(app.Namespace).Delete(context.TODO(), appList.Items[i].Name, metav1.DeleteOptions{})
 			if err != nil {
-				klog.Fatalf("")
+				klog.Fatalf("error while deleting the pods %v", app.Name)
+				klog.Info("\n--------------------------------------------------\n")
+				
 				return err
 			}
 		}
+		klog.Info("pods deleted successfully")
+		klog.Info("\n--------------------------------------------------\n")
 	}
 
 	if ifCreate {
+		klog.Info("pods are getting created ", numCreate)
+		klog.Info("\n--------------------------------------------------\n")
 		for i := 0; i < numCreate ; i++ {
 			newApp, err := c.kubeclient.CoreV1().Pods(app.Namespace).Create(context.TODO(), newPod(app), metav1.CreateOptions{})
 			if err != nil {
 				if errors.IsAlreadyExists(err) {
 					numCreate++
 				} else {
-					klog.Fatalf("error in ifcreate")
+					klog.Fatalf("error in creating pods %v", app.Name)
+					klog.Info("\n--------------------------------------------------\n")
 					return err
 				}
 			} 
 			if newApp.Name != "" {
-				klog.Fatalf("Created!")
+				klog.Info("Created!")
+				klog.Info("\n--------------------------------------------------\n")
 			}
 		}
 	}
@@ -258,6 +298,8 @@ func (c *Controller) syncPods(app *v1alpha1.App, appList *corev1.PodList) error 
 }
 
 func (c *Controller) waitForPods(app *v1alpha1.App, appsList *corev1.PodList) error {
+	klog.Info("waiting for pods to be in running state")
+	klog.Info("\n--------------------------------------------------\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -272,6 +314,8 @@ func (c *Controller) waitForPods(app *v1alpha1.App, appsList *corev1.PodList) er
 }
 
 func (c *Controller) getCurrentPods(app *v1alpha1.App) int {
+	klog.Info("calculating total number of running pods")
+	klog.Info("\n--------------------------------------------------\n")
 	labelSelector := metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"controller": app.Name,
@@ -290,6 +334,8 @@ func (c *Controller) getCurrentPods(app *v1alpha1.App) int {
 		}
 	}
 
+	klog.Info("Total number of running pods are %d", currentPods)
+
 	return currentPods
 }
 
@@ -304,7 +350,11 @@ func (c *Controller) updateAppStatus(app *v1alpha1.App, message string, appsList
 	appCopy.Status.Count = currentPods
 	appCopy.Status.Message = message
 
+	klog.Info("updating status")
+
 	_, err = c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.Background(), appCopy, metav1.UpdateOptions{})
+
+	klog.Info("updates status with error = %v", err.Error())
 
 	return err
 
@@ -312,6 +362,8 @@ func (c *Controller) updateAppStatus(app *v1alpha1.App, message string, appsList
 }
 
 func newPod(app *v1alpha1.App) *corev1.Pod {
+	klog.Info("new pods creation function")
+	klog.Info("\n--------------------------------------------------\n")
 	labels := map[string]string{
 		"controller": app.Name,
 	}
@@ -351,11 +403,19 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 
 
 func (c *Controller) createHandler(obj interface{}) {
-	klog.Fatalf("create Handler here")
-	c.workqueue.Add(obj)
+	klog.Info("In the createHandler")
+	klog.Info("\n--------------------------------------------------\n")
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.workqueue.Add(key)
 }
 
 func (c *Controller) deleteHandler(obj interface{}) {
-	klog.Fatalf("")
+	klog.Info("In the deleteHandler")
+	klog.Info("\n--------------------------------------------------\n")
 	c.workqueue.Done(obj)
 }
