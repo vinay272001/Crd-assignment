@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned"
-	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1"
-	fakephoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1/fake"
+	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.com/v1alpha1"
+	fakephoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.com/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"

@@ -19,7 +19,7 @@ limitations under the License.
 package scheme
 
 import (
-	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/apis/phoenix.io/v1alpha1"
+	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/apis/phoenix.com/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"net/http"
 
-	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.io/v1alpha1"
+	phoenixv1alpha1 "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned/typed/phoenix.com/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

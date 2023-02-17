@@ -1,7 +1,7 @@
-apiVersion: phoenix.io/v1alpha1
+apiVersion: phoenix.com/v1alpha1
 kind: App
 metadata:
   name: phoenix-app-1 
 spec:
   message: "Welcome"
-  count: 5
+  count: 3

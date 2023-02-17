@@ -12,10 +12,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
-	"github.com/vinay272001/Crd-assignment/pkg/apis/phoenix.io/v1alpha1"
+	"github.com/vinay272001/Crd-assignment/pkg/apis/phoenix.com/v1alpha1"
 	clientset "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned"
-	informers "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/phoenix.io/v1alpha1"
-	listers "github.com/vinay272001/Crd-assignment/pkg/client/listers/phoenix.io/v1alpha1"
+	informers "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/phoenix.com/v1alpha1"
+	listers "github.com/vinay272001/Crd-assignment/pkg/client/listers/phoenix.com/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -156,7 +156,7 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	klog.Info("successfully synced %s", obj.(string))
+	klog.Info("successfully synced ", obj.(string))
 	klog.Info("\n--------------------------------------------------\n")
 
 	return true
@@ -334,7 +334,7 @@ func (c *Controller) getCurrentPods(app *v1alpha1.App) int {
 		}
 	}
 
-	klog.Info("Total number of running pods are %d", currentPods)
+	klog.Info("Total number of running pods are ", currentPods)
 
 	return currentPods
 }
@@ -351,10 +351,9 @@ func (c *Controller) updateAppStatus(app *v1alpha1.App, message string, appsList
 	appCopy.Status.Message = message
 
 	klog.Info("updating status")
+	_, err = c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.TODO(), appCopy, metav1.UpdateOptions{})
 
-	_, err = c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.Background(), appCopy, metav1.UpdateOptions{})
-
-	klog.Info("updates status with error = %v", err.Error())
+	klog.Info("updates status with error = ", err.Error())
 
 	return err
 
