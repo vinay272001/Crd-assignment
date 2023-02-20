@@ -149,15 +149,57 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	defer c.workqueue.Forget(obj)
-	if err := c.syncHandler(obj.(string)); err != nil {
-		klog.Fatalf("Error while syncing the current vs desired state----%s", err.Error())
-		klog.Info("\n--------------------------------------------------\n")
-		return false
-	}
+	// defer c.workqueue.Forget(obj)
+	// if err := c.syncHandler(obj.(string)); err != nil {
+	// 	klog.Info("\n--------------------------------------------------\n")
+	// 	c.workqueue.AddRateLimited(obj.(string))
+	// 	// return true
+	// }
 
-	klog.Info("successfully synced ", obj.(string))
-	klog.Info("\n--------------------------------------------------\n")
+	// klog.Info("successfully synced ", obj.(string))
+	// klog.Info("\n--------------------------------------------------\n")
+
+	err := func(obj interface{}) error {
+		// We call Done here so the workqueue knows we have finished
+		// processing this item. We also must remember to call Forget if we
+		// do not want this work item being re-queued. For example, we do
+		// not call Forget if a transient error occurs, instead the item is
+		// put back on the workqueue and attempted again after a back-off
+		// period.
+		defer c.workqueue.Done(obj)
+		var key string
+		var ok bool
+		// We expect strings to come off the workqueue. These are of the
+		// form namespace/name. We do this as the delayed nature of the
+		// workqueue means the items in the informer cache may actually be
+		// more up to date that when the item was initially put onto the
+		// workqueue.
+		if key, ok = obj.(string); !ok {
+			// As the item in the workqueue is actually invalid, we call
+			// Forget here else we'd go into a loop of attempting to
+			// process a work item that is invalid.
+			c.workqueue.Forget(obj)
+			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+			return nil
+		}
+		// Run the syncHandler, passing it the namespace/name string of the
+		// Foo resource to be synced.
+		if err := c.syncHandler(key); err != nil {
+			// Put the item back on the workqueue to handle any transient errors.
+			// c.workqueue.AddRateLimited(key)
+			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
+		}
+		// Finally, if no error occurs we Forget this item so it does not
+		// get queued again until another change happens.
+		c.workqueue.Forget(obj)
+		klog.Infof("Successfully synced '%s'", key)
+		return nil
+	}(obj)
+
+	if err != nil {
+		// utilruntime.HandleError(err)
+		return true
+	}
 
 	return true
 }
@@ -214,8 +256,6 @@ func (c *Controller) syncHandler(key string) error {
 		klog.Fatalf("error %s, waiting for pods to meet the expected state", err.Error())
 		klog.Info("\n--------------------------------------------------\n")
 	}
-	// Finally, we update the status block of the Foo resource to reflect the
-	// current state of the world
 
 	klog.Info("successfully waited for pods")
 	klog.Info("\n--------------------------------------------------\n")
@@ -258,7 +298,7 @@ func (c *Controller) syncPods(app *v1alpha1.App, appList *corev1.PodList) error 
 	}
 
 	if ifDelete {
-		klog.Info("pods are getting deletes ", numDelete)
+		klog.Info("pods are getting deleted ", numDelete)
 		klog.Info("\n--------------------------------------------------\n")
 		for i:= 0; i < numDelete ; i++ {
 			err := c.kubeclient.CoreV1().Pods(app.Namespace).Delete(context.TODO(), appList.Items[i].Name, metav1.DeleteOptions{})
@@ -298,8 +338,8 @@ func (c *Controller) syncPods(app *v1alpha1.App, appList *corev1.PodList) error 
 }
 
 func (c *Controller) waitForPods(app *v1alpha1.App, appsList *corev1.PodList) error {
-	klog.Info("waiting for pods to be in running state")
-	klog.Info("\n--------------------------------------------------\n")
+	// klog.Info("waiting for pods to be in running state")
+	// klog.Info("\n--------------------------------------------------\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -341,23 +381,16 @@ func (c *Controller) getCurrentPods(app *v1alpha1.App) int {
 
 func (c *Controller) updateAppStatus(app *v1alpha1.App, message string, appsList *corev1.PodList) error {
 
-	appCopy, err := c.appclient.PhoenixV1alpha1().Apps(app.Namespace).Get(context.TODO(), app.Name, metav1.GetOptions{})
 	currentPods := c.getCurrentPods(app)
-	if err != nil {
-		return err
-	}
+	appCopy := app.DeepCopy()
 
 	appCopy.Status.Count = currentPods
 	appCopy.Status.Message = message
 
 	klog.Info("updating status")
-	_, err = c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.TODO(), appCopy, metav1.UpdateOptions{})
-
-	klog.Info("updates status with error = ", err.Error())
+	_, err := c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.TODO(), appCopy, metav1.UpdateOptions{})
 
 	return err
-
-
 }
 
 func newPod(app *v1alpha1.App) *corev1.Pod {
@@ -369,7 +402,7 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
-			Name: fmt.Sprintf(app.Name + "-" + strconv.Itoa(rand.Intn(100000000))),
+			Name: fmt.Sprintf(app.Name + "-" + strconv.Itoa(rand.Intn(10000))),
 			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(app, v1.SchemeGroupVersion.WithKind("App")),
@@ -385,13 +418,17 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 							Name: "MESSAGE",
 							Value: app.Spec.Message,
 						},
+						{
+							Name: "COUNT",
+							Value: strconv.Itoa(int(*app.Spec.Count)),
+						},
 					},
 					Command: []string{
 						"/bin/sh",
 					},
 					Args: []string{
 						"-c",
-						"while true; do echo '$(MESSAGE)'; sleep 100; done",
+						"echo 'Message = $(MESSAGE) and Count = $(COUNT)'",
 					},
 				},
 
@@ -413,8 +450,43 @@ func (c *Controller) createHandler(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) deleteHandler(obj interface{}) {
-	klog.Info("In the deleteHandler")
+func(c *Controller) deleteHandler(obj interface{}) {
+	klog.Info("Deleting pods using kubeClient")
 	klog.Info("\n--------------------------------------------------\n")
-	c.workqueue.Done(obj)
+	app, ok := obj.(*v1alpha1.App)
+    if !ok {
+        return
+    }
+
+	klog.Info("got app")
+	klog.Info("\n--------------------------------------------------\n")
+    // Delete the Pods associated with the custom resource
+
+	labelSelector := metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"controller": app.Name,
+		},
+	}
+	listOptions := metav1.ListOptions{
+		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
+	}
+
+    podList, err := c.kubeclient.CoreV1().Pods(app.Namespace).List(context.TODO(), listOptions)
+
+	klog.Info("got pods list")
+	klog.Info("\n--------------------------------------------------\n")
+
+    if err != nil {
+        klog.Errorf("Failed to list pods for app %s: %v", app.Name, err)
+        return
+    }
+	klog.Info("deleting pods")
+	klog.Info("\n--------------------------------------------------\n")
+    for _, pod := range podList.Items {
+        if err := c.kubeclient.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
+            klog.Errorf("Failed to delete pod %s: %v", pod.Name, err)
+        }
+    }
+	klog.Info("pods deleted")
+	klog.Info("\n--------------------------------------------------\n")
 }
