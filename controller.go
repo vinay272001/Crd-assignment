@@ -428,7 +428,7 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 					},
 					Args: []string{
 						"-c",
-						"echo 'Message = $(MESSAGE) and Count = $(COUNT)'",
+						"echo 'Message is $(MESSAGE) where Count is $(COUNT)'",
 					},
 				},
 

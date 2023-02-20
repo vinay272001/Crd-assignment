@@ -27,6 +27,7 @@ phoenix-app-1   43s
 - Create deepcopy, lister, clientset and informers by runnning `$ "${execDir}"/generate-groups.sh all github.com/vinay272001/Crd-assignment/pkg/client github.com/vinay272001/Crd-assignment/pkg/apis phoenix.com:v1alpha1 --go-header-file "${execDir}"/hack/boilerplate.go.txt`
 - Create the `main.go`. In `main.go` we will declare the `kubeconfig`, create `clientsets` and the generate clusters.
 - To add all dependency : `$ go mod tidy`
+- Create the `controller.go`.
 
 ## Running Controller
 

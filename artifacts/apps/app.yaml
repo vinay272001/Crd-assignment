@@ -3,5 +3,5 @@ kind: App
 metadata:
   name: phoenix-app-1 
 spec:
-  message: "Welcome-test"
+  message: "Welcome to my custom resource"
   count: 2
