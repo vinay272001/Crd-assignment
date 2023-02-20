@@ -19,13 +19,6 @@ spec:
                 type: string
               count:
                 type: integer
-          status:
-            type: object
-            properties: 
-              message:
-                type: string
-              count:
-                type: integer
   names:
     kind: App
     listKind: AppList

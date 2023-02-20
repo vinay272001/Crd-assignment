@@ -4,4 +4,4 @@ metadata:
   name: phoenix-app-1 
 spec:
   message: "Welcome to my custom resource"
-  count: 2
+  count: 3
