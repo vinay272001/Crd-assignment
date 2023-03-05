@@ -7,29 +7,59 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type App struct {
+type PipelineRun struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec AppSpec `json:"spec,omitempty"`
-	Status AppStatus `json:"status,omitempty"`
+	Spec PipelineRunSpec `json:"spec,omitempty"`
+	Status PipelineRunStatus `json:"status,omitempty"`
 }
 
-type AppSpec struct {
+type PipelineRunSpec struct {
 	Message string `json:"message"`
-	Count *int32 `json:"count"`
+	Count int `json:"count"`
 }
 
-type AppStatus struct {
+type PipelineRunStatus struct {
 	Message string `json:"message"`
 	Count int `json:"count"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type AppList struct {
+type PipelineRunList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	Items           []App `json:"items"`
+	Items           []PipelineRun `json:"items"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type TaskRun struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec TaskRunSpec `json:"spec,omitempty"`
+	Status TaskRunStatus `json:"status,omitempty"`
+}
+
+type TaskRunSpec struct {
+	Message string `json:"message"`
+	Count int `json:"count"`
+}
+
+type TaskRunStatus struct {
+	Message string `json:"message"`
+	Count int `json:"count"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type TaskRunList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+
+	Items           []TaskRun `json:"items"`
 }
