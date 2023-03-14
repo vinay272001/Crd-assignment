@@ -1,7 +1,7 @@
 apiVersion: phoenix.com/v1alpha1
 kind: PipelineRun
 metadata:
-  name: phoenix-pipelineRun-1 
+  name: phoenix-pipelinerun-1
 spec:
-  message: "Welcome to the pipelineRun"
+  message: "Hello World!"
   count: 1

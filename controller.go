@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"time"
 
+	"github.com/vinay272001/Crd-assignment/kmeta"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	"github.com/kanisterio/kanister/pkg/poll"
 	"github.com/vinay272001/Crd-assignment/pkg/apis/phoenix.com/v1alpha1"
 	clientset "github.com/vinay272001/Crd-assignment/pkg/client/clientset/versioned"
 	informers "github.com/vinay272001/Crd-assignment/pkg/client/informers/externalversions/phoenix.com/v1alpha1"
@@ -20,10 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"github.com/kanisterio/kanister/pkg/poll"
 )
 
 const (
@@ -44,11 +43,13 @@ const (
 type Controller struct {
 	// kubeclient is a standard kubernetes clientset
 	kubeclient kubernetes.Interface
-	// appclient is a clientset for our own API group
-	appclient clientset.Interface
+	// pipelineRunClient is a clientset for our own API group
+	pipelineRunClient clientset.Interface
 
-	applisters        listers.AppLister
-	appSynced        cache.InformerSynced
+	pipelineRunListers        listers.PipelineRunLister
+	pipelineRunSynced        cache.InformerSynced
+
+	taskRunListers        listers.TaskRunLister
 
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
@@ -61,30 +62,31 @@ type Controller struct {
 // returns a new controller
 func NewController(
 	kubeclient kubernetes.Interface, 
-	appclient clientset.Interface, 
-	appInformer informers.AppInformer) *Controller {
-	klog.Info("NewController is called")
+	pipelineRunClient clientset.Interface, 
+	pipelineRunInformer informers.PipelineRunInformer,
+	taskRunInformer informers.TaskRunInformer) *Controller {
+	klog.Info("NewController object creation Here")
 	klog.Info("\n--------------------------------------------------\n")
 	controller := &Controller{
 		kubeclient:     kubeclient,
-		appclient:   appclient,
-		applisters:	appInformer.Lister(),
-		appSynced:        appInformer.Informer().HasSynced,
-		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "App"),
+		pipelineRunClient:   pipelineRunClient,
+		pipelineRunListers:	pipelineRunInformer.Lister(),
+		pipelineRunSynced:        pipelineRunInformer.Informer().HasSynced,
+		taskRunListers:	taskRunInformer.Lister(),
+		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "PipelineRun"),
 	}
-	klog.Info("NewController made")
+	klog.Info("NewController created")
 	klog.Info("\n--------------------------------------------------\n")
 
 	klog.Info("Setting up event handlers")
 	klog.Info("\n--------------------------------------------------\n")
-	// event handler when the trackPod resources are added/deleted/updated.
-	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	pipelineRunInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.createHandler,
 			UpdateFunc: func(old, new interface{}) {
-				klog.Info("In the UpdateFunc method")
+				klog.Info("UpdateFunc method Here")
 				klog.Info("\n--------------------------------------------------\n")
-				oldApp := old.(*v1alpha1.App)
-				newApp := new.(*v1alpha1.App)
+				oldApp := old.(*v1alpha1.PipelineRun)
+				newApp := new.(*v1alpha1.PipelineRun)
 				if oldApp == newApp {
 					return
 				}
@@ -94,8 +96,14 @@ func NewController(
 		},
 	)
 
-	klog.Info("returning controller")
-	klog.Info("\n--------------------------------------------------\n")
+	taskRunInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: kmeta.FilterController(&v1alpha1.PipelineRun{}),
+	})
+	taskRunInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+
+		DeleteFunc: controller.taskDeleteHandler,
+
+	})
 	return controller
 }
 
@@ -107,13 +115,13 @@ func (c *Controller) Run(ch chan struct{}) error {
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	klog.Info("Starting App controller")
+	klog.Info("Starting pipelineRun controller")
 	klog.Info("\n--------------------------------------------------\n")
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
 	klog.Info("\n--------------------------------------------------\n")
-	if ok := cache.WaitForCacheSync(ch, c.appSynced); !ok {
+	if ok := cache.WaitForCacheSync(ch, c.pipelineRunSynced); !ok {
 		klog.Fatalf("failed to wait for caches to sync")
 		klog.Info("\n--------------------------------------------------\n")
 	}
@@ -121,7 +129,7 @@ func (c *Controller) Run(ch chan struct{}) error {
 	klog.Info("Starting workers")
 	klog.Info("\n--------------------------------------------------\n")
 	go wait.Until(c.runWorker, time.Second, ch)
-	klog.Info("Started workers")
+	klog.Info("workers started")
 	klog.Info("\n--------------------------------------------------\n")
 	<-ch
 	klog.Info("Shutting down workers")
@@ -144,20 +152,9 @@ func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
 
 	if shutdown {
-		klog.Info("Shutting down")
-		klog.Info("\n--------------------------------------------------\n")
+		klog.Fatalf("Shutting down")
 		return false
 	}
-
-	// defer c.workqueue.Forget(obj)
-	// if err := c.syncHandler(obj.(string)); err != nil {
-	// 	klog.Info("\n--------------------------------------------------\n")
-	// 	c.workqueue.AddRateLimited(obj.(string))
-	// 	// return true
-	// }
-
-	// klog.Info("successfully synced ", obj.(string))
-	// klog.Info("\n--------------------------------------------------\n")
 
 	err := func(obj interface{}) error {
 		// We call Done here so the workqueue knows we have finished
@@ -166,20 +163,16 @@ func (c *Controller) processNextWorkItem() bool {
 		// not call Forget if a transient error occurs, instead the item is
 		// put back on the workqueue and attempted again after a back-off
 		// period.
-		defer c.workqueue.Done(obj)
-		var key string
-		var ok bool
+		// defer c.workqueue.Done(obj)
 		// We expect strings to come off the workqueue. These are of the
 		// form namespace/name. We do this as the delayed nature of the
 		// workqueue means the items in the informer cache may actually be
 		// more up to date that when the item was initially put onto the
 		// workqueue.
-		if key, ok = obj.(string); !ok {
-			// As the item in the workqueue is actually invalid, we call
-			// Forget here else we'd go into a loop of attempting to
-			// process a work item that is invalid.
-			c.workqueue.Forget(obj)
-			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+		key, ok := obj.(string)
+		if !ok {
+			klog.Fatalf("error while calling Namespace Key func on cache")
+			
 			return nil
 		}
 		// Run the syncHandler, passing it the namespace/name string of the
@@ -193,11 +186,11 @@ func (c *Controller) processNextWorkItem() bool {
 		// get queued again until another change happens.
 		c.workqueue.Forget(obj)
 		klog.Infof("Successfully synced '%s'", key)
+		klog.Info("\n--------------------------------------------------\n")
 		return nil
 	}(obj)
 
 	if err != nil {
-		// utilruntime.HandleError(err)
 		return true
 	}
 
@@ -208,15 +201,15 @@ func (c *Controller) processNextWorkItem() bool {
 // converge the two. It then updates the Status block of the Foo resource
 // with the current status of the resource.
 func (c *Controller) syncHandler(key string) error {
-	// Convert the namespace/name string into a distinct namespace and name
+	// Convert the namespace/name into a distinct namespace and name
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
 
-	// Get the Foo resource with this namespace/name
-	app, err := c.applisters.Apps(namespace).Get(name)
+	// Get the pipelineRun resource with this namespace/name
+	pipelineRun, err := c.pipelineRunListers.PipelineRuns(namespace).Get(name)
 	if err != nil {
 		// The Foo resource may no longer exist, in which case we stop
 		// processing.
@@ -228,187 +221,230 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	labelSelector := metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"controller": app.Name,
+	
+	klog.Info("In the syncHandler to create taskRun")
+	klog.Info("\n--------------------------------------------------\n")
+
+	klog.Info("checking if newTask is needed or not")
+	klog.Info("\n--------------------------------------------------\n")
+
+	var taskRun *v1alpha1.TaskRun
+
+	if pipelineRun.Spec.Message != pipelineRun.Status.Message || pipelineRun.Spec.Count != pipelineRun.Status.Count {
+		
+		taskRun, err = c.syncPipelineTask(pipelineRun)
+
+	} else{
+		klog.Info("pipelineRun not updated")
+		klog.Info("\n--------------------------------------------------\n")
+	}
+
+	if err != nil {
+		klog.Fatalf("error creating new taskRun for current pipelineRun", err.Error())
+	}
+	
+	if taskRun != nil {
+		
+		c.updateStatus(pipelineRun, taskRun)
+
+	}
+
+	return nil
+}
+
+
+func(c *Controller) updateStatus (pipelineRun *v1alpha1.PipelineRun, taskRun *v1alpha1.TaskRun) {
+
+	klog.Info("taskRun created successfully")
+	klog.Info("\n--------------------------------------------------\n")
+
+	if err := c.waitForPods(taskRun); err != nil {
+		klog.Errorf("error %s, waiting for pods to meet the expected state", err.Error())
+	}
+	// update taskrun status
+	if err := c.updateTaskRunStatus(taskRun); err != nil {
+		klog.Errorf("error %s updating PipelineRun status", err.Error())
+	}
+
+	// update pipelinerun status
+
+	klog.Info(pipelineRun.Status)
+
+	if err := c.updatePipelineRunStatus(pipelineRun, taskRun); err != nil {
+		klog.Errorf("error %s updating PipelineRun status", err.Error())
+	}
+	
+	klog.Info(pipelineRun.Status)
+
+	if pipelineRun.Status.Count == c.getCompletedPods(taskRun) {
+		var obj interface{} = taskRun
+		key, err := cache.MetaNamespaceKeyFunc(obj)
+		if err != nil {
+			klog.Fatalf("error while calling Namespace Key func on cache", err.Error())
+		
+			return
+		}
+		c.workqueue.Done(key)
+	}
+
+}
+
+
+func (c *Controller) syncPipelineTask(pipelineRun *v1alpha1.PipelineRun) (*v1alpha1.TaskRun, error) {
+
+	klog.Info("New task Needed!")
+	klog.Info("\n--------------------------------------------------\n")
+	taskRun, err := c.pipelineRunClient.PhoenixV1alpha1().TaskRuns(pipelineRun.Namespace).Create(context.TODO(), createTaskRun(pipelineRun), metav1.CreateOptions{})
+	if err != nil {
+		klog.Fatalf("error creating new taskRun", err.Error())
+		return nil, err
+	}
+	if taskRun != nil {
+		klog.Info("new taskRun has been created")
+		klog.Info("\n--------------------------------------------------\n")
+		err := c.executeTaskRun(pipelineRun, taskRun)
+		if err != nil {
+			klog.Fatalf("error executing taskRun", err.Error())
+		}
+	}
+	return taskRun, nil
+}
+
+func createTaskRun(pipelineRun *v1alpha1.PipelineRun) *v1alpha1.TaskRun {
+	return &v1alpha1.TaskRun{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: fmt.Sprintf("%s-taskrun-", pipelineRun.Name),
+			// Name: fmt.Sprintf("%v-taskrun-%v", pipelineRun.Name, pipelineRun.ObjectMeta.Generation),
+			Namespace: pipelineRun.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(pipelineRun, v1alpha1.SchemeGroupVersion.WithKind("PipelineRun")),
+			},
+		},
+		Spec: v1alpha1.TaskRunSpec{
+			Message: pipelineRun.Spec.Message,
+			Count: pipelineRun.Spec.Count,
 		},
 	}
-	listOptions := metav1.ListOptions{
-		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
+}
+
+func (c *Controller) executeTaskRun(pipelineRun *v1alpha1.PipelineRun, taskRun *v1alpha1.TaskRun) (error){
+	toCreate := taskRun.Spec.Count
+
+	for i := 0; i < toCreate; i++ {
+		newPod, err := c.kubeclient.CoreV1().Pods(taskRun.Namespace).Create(context.TODO(), newPod(taskRun), metav1.CreateOptions{})
+		if err != nil {
+			klog.Fatalf("error creating pod for taskRun ", taskRun.Name)
+		}
+		if newPod.Name != "" {
+			klog.Info("Pod created successfully ", newPod.Name)
+			klog.Info("\n--------------------------------------------------\n")
+		}
+
 	}
-
-	appList, err := c.kubeclient.CoreV1().Pods(app.Namespace).List(context.TODO(), listOptions)
-
-	klog.Info("In the syncHandler to sync pods")
-	klog.Info("\n--------------------------------------------------\n")
-
-	if err := c.syncPods(app, appList); err != nil {
-		klog.Fatalf("Error while syncing the current vs desired state for App %v: %v\n", app.Name, err.Error())
-		klog.Info("\n--------------------------------------------------\n")
-	}
-	
-	klog.Info("synced pods successfully")
-	klog.Info("\n--------------------------------------------------\n")
-	
-
-	err = c.waitForPods(app, appList)
-	if err != nil {
-		klog.Fatalf("error %s, waiting for pods to meet the expected state", err.Error())
-		klog.Info("\n--------------------------------------------------\n")
-	}
-
-	klog.Info("successfully waited for pods")
-	klog.Info("\n--------------------------------------------------\n")
-
-	err = c.updateAppStatus(app, app.Spec.Message, appList)
-	if err != nil {
-		return err
-	}
-
-	klog.Info("successfully updated status")
-	klog.Info("\n--------------------------------------------------\n")
-
 	return nil
 }
 
-func (c *Controller) syncPods(app *v1alpha1.App, appList *corev1.PodList) error {
-	newPods := app.Spec.Count
-	currentPods := c.getCurrentPods(app)
-	newMessage := app.Spec.Message
-	currentMessage := app.Status.Message
-	var ifDelete, ifCreate bool
-	numCreate := int(*newPods)
-	numDelete := 0
 
-	if int(*newPods) != currentPods || newMessage != currentMessage {
-		if newMessage != currentMessage {
-			ifDelete = true
-			ifCreate = true
-			numCreate = int(*newPods)
-			numDelete = currentPods
-		} else {
-			if currentPods < int(*newPods) {
-				ifCreate = true
-				numCreate = int(*newPods) - currentPods
-			} else if currentPods > int(*newPods) {
-				ifDelete = true
-				numDelete = currentPods - int(*newPods)
-			}
-		}
-	}
-
-	if ifDelete {
-		klog.Info("pods are getting deleted ", numDelete)
-		klog.Info("\n--------------------------------------------------\n")
-		for i:= 0; i < numDelete ; i++ {
-			err := c.kubeclient.CoreV1().Pods(app.Namespace).Delete(context.TODO(), appList.Items[i].Name, metav1.DeleteOptions{})
-			if err != nil {
-				klog.Fatalf("error while deleting the pods %v", app.Name)
-				klog.Info("\n--------------------------------------------------\n")
-				
-				return err
-			}
-		}
-		klog.Info("pods deleted successfully")
-		klog.Info("\n--------------------------------------------------\n")
-	}
-
-	if ifCreate {
-		klog.Info("pods are getting created ", numCreate)
-		klog.Info("\n--------------------------------------------------\n")
-		for i := 0; i < numCreate ; i++ {
-			newApp, err := c.kubeclient.CoreV1().Pods(app.Namespace).Create(context.TODO(), newPod(app), metav1.CreateOptions{})
-			if err != nil {
-				if errors.IsAlreadyExists(err) {
-					numCreate++
-				} else {
-					klog.Fatalf("error in creating pods %v", app.Name)
-					klog.Info("\n--------------------------------------------------\n")
-					return err
-				}
-			} 
-			if newApp.Name != "" {
-				klog.Info("Created!")
-				klog.Info("\n--------------------------------------------------\n")
-			}
-		}
-	}
-
-	return nil
-}
-
-func (c *Controller) waitForPods(app *v1alpha1.App, appsList *corev1.PodList) error {
-	// klog.Info("waiting for pods to be in running state")
-	// klog.Info("\n--------------------------------------------------\n")
+func (c *Controller) waitForPods(taskRun *v1alpha1.TaskRun) error {
+	klog.Info("waiting for pods to be in complete state")
+	klog.Info("\n--------------------------------------------------\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	return poll.Wait(ctx, func(ctx context.Context) (bool, error) {
-		currentPods := c.getCurrentPods(app)
+		currentPods := c.getCompletedPods(taskRun)
 
-		if currentPods == int(*app.Spec.Count) {
+		if currentPods == taskRun.Spec.Count {
 			return true, nil
 		}
 		return false, nil
 	})
 }
 
-func (c *Controller) getCurrentPods(app *v1alpha1.App) int {
-	klog.Info("calculating total number of running pods")
-	klog.Info("\n--------------------------------------------------\n")
+func (c *Controller) getCompletedPods(taskRun *v1alpha1.TaskRun) int {
+	// klog.Info("calculating total number of running pods")
+	// klog.Info("\n--------------------------------------------------\n")
 	labelSelector := metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"controller": app.Name,
+			"controller": taskRun.Name,
 		},
 	}
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
 	}
-	appsList, _ := c.kubeclient.CoreV1().Pods(app.Namespace).List(context.TODO(), listOptions)
+	podList, _ := c.kubeclient.CoreV1().Pods(taskRun.Namespace).List(context.TODO(), listOptions)
 	
-	currentPods := 0
+	completedPods := 0
 
-	for _,pod := range appsList.Items {
-		if pod.ObjectMeta.DeletionTimestamp.IsZero() && pod.Status.Phase == "Running" {
-			currentPods++
+	for _,pod := range podList.Items {
+		if pod.ObjectMeta.DeletionTimestamp.IsZero() && pod.Status.Phase == "Succeeded" {
+			completedPods++
 		}
 	}
 
-	klog.Info("Total number of running pods are ", currentPods)
+	klog.Info("completed pods: ", completedPods)
+	klog.Info("\n--------------------------------------------------\n")
 
-	return currentPods
+	return completedPods
 }
 
-func (c *Controller) updateAppStatus(app *v1alpha1.App, message string, appsList *corev1.PodList) error {
+func (c *Controller) updatePipelineRunStatus(pipelineRun *v1alpha1.PipelineRun, taskRun *v1alpha1.TaskRun) error {
 
-	currentPods := c.getCurrentPods(app)
-	appCopy := app.DeepCopy()
+	pipelineRunCopy, err := c.pipelineRunClient.PhoenixV1alpha1().PipelineRuns(pipelineRun.Namespace).Get(context.Background(), pipelineRun.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
 
-	appCopy.Status.Count = currentPods
-	appCopy.Status.Message = message
+	taskRunCopy, err := c.pipelineRunClient.PhoenixV1alpha1().TaskRuns(taskRun.Namespace).Get(context.Background(), taskRun.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	pipelineRunCopy.Status.Message = taskRunCopy.Status.Message
+	pipelineRunCopy.Status.Count = taskRunCopy.Status.Count
 
 	klog.Info("updating status")
-	_, err := c.appclient.PhoenixV1alpha1().Apps(app.Namespace).UpdateStatus(context.TODO(), appCopy, metav1.UpdateOptions{})
+	klog.Info("\n--------------------------------------------------\n")
+	_, err = c.pipelineRunClient.PhoenixV1alpha1().PipelineRuns(pipelineRun.Namespace).UpdateStatus(context.TODO(), pipelineRunCopy, metav1.UpdateOptions{})
 
 	return err
 }
 
-func newPod(app *v1alpha1.App) *corev1.Pod {
+func (c *Controller) updateTaskRunStatus(taskRun *v1alpha1.TaskRun) error {
+
+	currentPods := c.getCompletedPods(taskRun)
+	taskRunCopy, err := c.pipelineRunClient.PhoenixV1alpha1().TaskRuns(taskRun.Namespace).Get(context.Background(), taskRun.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	taskRunCopy.Status.Count = currentPods
+	taskRunCopy.Status.Message = taskRunCopy.Spec.Message
+
+	klog.Info("updating status")
+	klog.Info("\n--------------------------------------------------\n")
+	_, err = c.pipelineRunClient.PhoenixV1alpha1().TaskRuns(taskRun.Namespace).UpdateStatus(context.TODO(), taskRunCopy, metav1.UpdateOptions{})
+
+	return err
+}
+
+func newPod(taskRun *v1alpha1.TaskRun) *corev1.Pod {
 	klog.Info("new pods creation function")
 	klog.Info("\n--------------------------------------------------\n")
 	labels := map[string]string{
-		"controller": app.Name,
+		"controller": taskRun.Name,
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
-			Name: fmt.Sprintf(app.Name + "-" + strconv.Itoa(rand.Intn(10000))),
-			Namespace: app.Namespace,
+			GenerateName: fmt.Sprintf("%s-", taskRun.Name),
+			Namespace: taskRun.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(app, v1.SchemeGroupVersion.WithKind("App")),
+				*metav1.NewControllerRef(taskRun, v1alpha1.SchemeGroupVersion.WithKind("TaskRun")),
 			},
 		},
 		Spec: corev1.PodSpec{
+			RestartPolicy: "Never",
 			Containers: []corev1.Container{
 				{
 					Name: "nginx",
@@ -416,11 +452,11 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 					Env: []corev1.EnvVar{
 						{
 							Name: "MESSAGE",
-							Value: app.Spec.Message,
+							Value: taskRun.Spec.Message,
 						},
 						{
 							Name: "COUNT",
-							Value: strconv.Itoa(int(*app.Spec.Count)),
+							Value: strconv.Itoa(taskRun.Spec.Count),
 						},
 					},
 					Command: []string{
@@ -441,52 +477,72 @@ func newPod(app *v1alpha1.App) *corev1.Pod {
 func (c *Controller) createHandler(obj interface{}) {
 	klog.Info("In the createHandler")
 	klog.Info("\n--------------------------------------------------\n")
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
-		utilruntime.HandleError(err)
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Fatalf("error while calling Namespace Key func on cache", err.Error())
+		
 		return
 	}
 	c.workqueue.Add(key)
 }
 
 func(c *Controller) deleteHandler(obj interface{}) {
-	klog.Info("Deleting pods using kubeClient")
+	klog.Info("Deleting pods")
 	klog.Info("\n--------------------------------------------------\n")
-	app, ok := obj.(*v1alpha1.App)
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Fatalf("error while calling Namespace Key func on cache", err.Error())
+		
+		return
+	}
+	c.workqueue.Done(key)
+}
+
+func(c *Controller) getOwnerPipelineRun(taskRun *v1alpha1.TaskRun) (*v1alpha1.PipelineRun, error) {
+    pipelineRunRef := metav1.GetControllerOf(taskRun)
+    if pipelineRunRef == nil {
+        return nil, fmt.Errorf("TaskRun %s/%s has no owner PipelineRun", taskRun.Namespace, taskRun.Name)
+    }
+
+    pipelineRun, err := c.pipelineRunClient.PhoenixV1alpha1().PipelineRuns(taskRun.Namespace).Get(context.Background(), pipelineRunRef.Name, metav1.GetOptions{})
+    if err != nil {
+        return nil, fmt.Errorf("Error retrieving owner PipelineRun %s/%s: %s", taskRun.Namespace, pipelineRunRef.Name, err.Error())
+    }
+
+    return pipelineRun, nil
+}
+
+
+func (c *Controller) taskDeleteHandler(obj interface{}) {
+	klog.Info("In the deleteHandlerTest")
+	klog.Info("\n--------------------------------------------------\n")
+
+	taskRun, ok := obj.(*v1alpha1.TaskRun)
     if !ok {
         return
     }
 
-	klog.Info("got app")
-	klog.Info("\n--------------------------------------------------\n")
-    // Delete the Pods associated with the custom resource
+	// const resyncPeriod = 30 * time.Second
 
-	labelSelector := metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"controller": app.Name,
-		},
+	// Ignore deleted objects with a deletion timestamp older than our resync period
+    // if !taskRun.DeletionTimestamp.IsZero() && taskRun.DeletionTimestamp.Time.Before(time.Now().Add(-resyncPeriod)) {
+    //     return
+    // }
+
+	pipelineRun, err := c.getOwnerPipelineRun(taskRun)
+
+	if err != nil {
+		klog.Info("PipelineRun Deleted")
+		klog.Info("\n--------------------------------------------------\n")
+	} else {
+		var obj interface{} = pipelineRun
+		key, err := cache.MetaNamespaceKeyFunc(obj)
+		if err != nil {
+			klog.Fatalf("error while calling Namespace Key func on cache", err.Error())
+		
+			return
+		}
+		c.workqueue.Add(key)
 	}
-	listOptions := metav1.ListOptions{
-		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
-	}
 
-    podList, err := c.kubeclient.CoreV1().Pods(app.Namespace).List(context.TODO(), listOptions)
-
-	klog.Info("got pods list")
-	klog.Info("\n--------------------------------------------------\n")
-
-    if err != nil {
-        klog.Errorf("Failed to list pods for app %s: %v", app.Name, err)
-        return
-    }
-	klog.Info("deleting pods")
-	klog.Info("\n--------------------------------------------------\n")
-    for _, pod := range podList.Items {
-        if err := c.kubeclient.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
-            klog.Errorf("Failed to delete pod %s: %v", pod.Name, err)
-        }
-    }
-	klog.Info("pods deleted")
-	klog.Info("\n--------------------------------------------------\n")
 }

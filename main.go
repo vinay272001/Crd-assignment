@@ -42,10 +42,10 @@ func main() {
 		}
 	}
 
-	klog.Info("getting the appClient")
+	klog.Info("getting the pipelineRunClient")
 	klog.Info("\n--------------------------------------------------\n")
 
-	appClient, err := clientset.NewForConfig(cfg)
+	pipelineRunClient, err := clientset.NewForConfig(cfg)
 	if err != nil {
 		klog.Fatalf("Error building example clientset: %s", err.Error())
 	}
@@ -58,11 +58,13 @@ func main() {
 		klog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
-	appInformerFactory := informers.NewSharedInformerFactory(appClient, time.Second*30)
+	pipelineRunInformerFactory := informers.NewSharedInformerFactory(pipelineRunClient, time.Second*30)
 
 	ch := make(chan struct{})
-	controllerObj := NewController(kubeClient, appClient, 
-		appInformerFactory.Phoenix().V1alpha1().Apps())
+	controllerObj := NewController(kubeClient, pipelineRunClient, 
+		pipelineRunInformerFactory.Phoenix().V1alpha1().PipelineRuns(),
+		pipelineRunInformerFactory.Phoenix().V1alpha1().TaskRuns(),
+	)
 
 	klog.Info("got controller in main.go")
 	klog.Info("\n--------------------------------------------------\n")
@@ -70,7 +72,7 @@ func main() {
 	klog.Info("starting channel and controller.run()")
 	klog.Info("\n--------------------------------------------------\n")
 	
-	appInformerFactory.Start(ch)
+	pipelineRunInformerFactory.Start(ch)
 	if err := controllerObj.Run(ch); err != nil {
 		klog.Fatalf("error running controller %s\n", err)
 	}
